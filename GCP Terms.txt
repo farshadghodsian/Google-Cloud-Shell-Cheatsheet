@@ -1,0 +1,45 @@
+-=Google Cloud Platform Terms=-
+
+Abbreviations:
+GCP: Google Cloud Platform
+GCE: Google Compute Engine
+GAE: Google App Engine
+GKE: Google Kubernetes Engine
+GCR: Google Cloud Repository
+IAM: Identity and Access Management
+K8: Kubernetes
+HPA: Horizontal Pool Autoscaler (for Kubernetes clusters/deployments)
+PVC: Persistent Volume Claim (Persistent Disks)
+
+
+-=Google Kubernetes Engine Key Terms=-
+
+Node: A single virtual or physical machine in a Kubernetes cluster.
+
+Cluster: A group of nodes firewalled from the internet, that are the primary compute resources managed by Kubernetes.
+
+Edge router: A router that enforces the firewall policy for your cluster. This could be a gateway managed by a cloud provider or a physical piece of hardware.
+
+Cluster network: A set of links, logical or physical, that facilitate communication within a cluster according to the Kubernetes networking model.
+
+Service: A Kubernetes Service that identifies a set of pods using label selectors. Unless mentioned otherwise, Services are assumed to have virtual IPs only routable within the cluster network.
+
+
+
+-= CI/CD =-
+
+Continuous Integration:
+Merging development features into the main code branch regularly, perhaps several times a day. Changes are validated using automated tests. Prevents integration headaches that arise with large code merges.
+
+Continuous Deployment:
+Extension of continuous integration where development occurs in short cycles, allowing features to be reliably released at any time. Automated processes allow releases to occur at greater speed and frequency.
+
+Jenkins:
+Open source automation server that lets you flexibly orchestrate your build, test, and deployment pipelines (CI/CD)
+  - Easy to install and configure
+  - Extensible via a plugin architecture
+  - Highly scalable and can run on a cluster of VMs
+  - Use containers ot run jobs on different OS and Cloud Environemnts (AWS or GCP) via build executers
+
+Helm: Package manager to confiure and deploy Kubernetes apps. You describe your apps using Helm Charts
+
