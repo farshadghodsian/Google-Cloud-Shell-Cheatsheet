@@ -101,14 +101,95 @@ Project ID   = $(gcloud config get-value project -q)
 ### Cloud Storage Buckets ###
 #############################
 
-## Creating a Bucket
+#### Creating a Bucket
 gsutil mb gs://[bucket-name]
 
-## Copying a file from Cloud Shell to Storage Bucket
+#### Displaying the contents of a Storage Bucket
+gsutil ls gs://[bucket-name]
+
+#### Copying a file from Cloud Shell to Storage Bucket
 gsutil cp my-file.txt gs://[bucket-name]
 
+#### Copy a file from Storage Bucket to server/cloud shell
+gsutil cp gs://[bucket-name]/sample.txt .
+
+#### Displaying the contents of a Storage Bucket
+gsutil ls gs://[bucket-name]
+
+#### To get access control list for a file in Cloud Bucket
+gsutil acl get gs://$BUCKET_NAME_1/setup.html  > acl.txt
+cat acl.txt
+
+#### Set ACL for file to private and print out the acl list again
+gsutil acl set private gs://$BUCKET_NAME_1/setup.html
+gsutil acl get gs://$BUCKET_NAME_1/setup.html  > acl2.txt
+cat acl2.txt
+
+#### To make a file publicly readable and check acl again to verify
+gsutil acl ch -u AllUsers:R gs://$BUCKET_NAME_1/setup.html
+gsutil acl get gs://$BUCKET_NAME_1/setup.html  > acl3.txt
+cat acl3.txt
+
+#### Generate a Customer Supplied Encryption Key (CSEK)
+python -c 'import base64; import os; print(base64.encodestring(os.urandom(32)))'
+
+#### Will generate a base64 encoded key like this
+Y0EpmDNdr9o5EHg9KsaR4Y6WWytJKy0bQG5b7S9tmVE=
+
+#### then put the above key in the .boto file like so
+encryption_key=Y0EpmDNdr9o5EHg9KsaR4Y6WWytJKy0bQG5b7S9tmVE=
+
+#### Now any files that are upload using gsutil will be encrypted bya CSEK you created instead of Google Provided keys
+
+#### Generate a new .boto config file for gsutil
+gsutil config -n
+
+#### Get details of gsutil version and config including location of .boto file
+gsutil version -l
+
+#### To rotate Encryption keys generate a new one with the python command above and place old key in decription_key1 value in .boto file
+#### Place new encryption key in the encryption_key value and then rewrite the required files in the Storage bucket
+gsutil rewrite -k gs://$BUCKET_NAME_1/testfile.html
+
+### Any file trying to be copyed over with out proper decryption keys will give this error
+No decryption key matches object gs://really-cool-test-bucket/testfile.html.
 
 
+#### View Current Lifecycle policy for Storage Bucket
+gsutil lifecycle get gs://$BUCKET_NAME_1
+
+#### Example Lifecyle policy JSON file
+{
+  "rule":
+  [
+    {
+      "action": {"type": "Delete"},
+      "condition": {"age": 61}
+    }
+  ]
+}
+
+#### Set new Lifecycle policy via a JSON file
+gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME_1
+
+#### Get versioning policy for Storage Bucket (Suspended policy means that it is not enabled)
+gsutil versioning get gs://$BUCKET_NAME_1
+
+#### Enable versioning on Storage Bucket
+gsutil versioning set on gs://$BUCKET_NAME_1
+
+#### Copy a file to Storage Bucket with versioning option
+gsutil cp -v testfile.html gs://$BUCKET_NAME_1
+
+#### List all versions of a file
+gsutil ls -a gs://$BUCKET_NAME_1/testfile.html
+
+gs://really-cool-test-bucket/testfile.html#1551838445092743  <--- this is the oldest version
+gs://really-cool-test-bucket/testfile.html#1551839990886092
+gs://really-cool-test-bucket/testfile.html#1551840022565501  
+
+#### To enable directory sync with folder on VM to Storage Bucket
+gsutil rsync -r ./folder gs://$BUCKET_NAME_1/folder
 
 #################################
 ###  VPC/Firewall Netwokring  ###
@@ -153,7 +234,17 @@ expand-ip-range new-useast  \
 ### Google Compute Engine (GCE) ###
 ###################################
 
+#### List all compute instances
+gcloud compute instances list
+
 # Creating a VM
+
+# Authorize VM to use the Google Cloud API via Service Account
+gcloud auth activate-service-account --key-file credentials.json
+
+# To initialize the Google Cloud SDK if not already setup by deafault on your VM
+https://cloud.google.com/sdk/downloads
+
 
 # To add start-up script to VM add custom metadata to VM in edit screen with key name startup-script
 # You can do the same for shutdown script by added a custom metadata with key name shutdown-script
