@@ -14,6 +14,12 @@ https://accounts.google.com/o/oauth2/auth?redirect_uri=urn%3Aietf%3Awg%3Aoauth%3
 #Set Default Project
 gcloud config set project learningautomation-io-test
 
+#Alternatively you could set Project ID using the built in DEVSHELL_PROJECT_ID environment variable to set to your current CloudShell project
+gcloud config set project $DEVSHELL_PROJECT_ID
+
+#Get current GCloud config
+gcloud config list
+
 #Get Project ID of current project
 gcloud config get-value project
 
@@ -34,7 +40,6 @@ gcloud config list | grep project  (for example to get just the current project 
 
 #Set current Project ID as an Environment variable
 export PROJECTID="$(gcloud config get-value project -q)"
-export PROJECTID=$(gcloud config get-value project -q)
 
 
 #Adding your zone to MY_ZONE Environment variable for ease of use
@@ -229,6 +234,11 @@ expand-ip-range new-useast  \
 --prefix-length 23 \
 --region us-east1
 
+#### Create firewall rule to allow external traffic on port 80 and 443 (eg. for nginx)
+gcloud compute firewall-rules create nginx-firewall \
+ --allow tcp:80,tcp:443 \
+ --target-tags nginxstack-tcp-80,nginxstack-tcp-443
+ 
 
 ###################################
 ### Google Compute Engine (GCE) ###
@@ -237,7 +247,17 @@ expand-ip-range new-useast  \
 #### List all compute instances
 gcloud compute instances list
 
-# Creating a VM
+# Using for loop to create multiple Compute VM Instances (eg. 3 nginx instances)
+for i in {1..3}; \
+do \
+  gcloud compute instances create "nginx-$i" \
+  --machine-type "f1-micro" \
+  --tags nginx-tcp-443,nginx-tcp-80 \
+  --zone us-central1-f \
+  --image   "https://www.googleapis.com/compute/v1/projects/bitnami-launchpad/global/images/bitnami-nginx-1-14-0-4-linux-debian-9-x86-64" \
+  --boot-disk-size "200" --boot-disk-type "pd-standard" \
+  --boot-disk-device-name "nginx-$i"; \
+done
 
 # Authorize VM to use the Google Cloud API via Service Account
 gcloud auth activate-service-account --key-file credentials.json
@@ -294,12 +314,17 @@ sudo screen -r -X [name of scree] '[command]\n'
 
 # Setting up a crontab job
 sudo crontab -e
+
+
 ######################################
 ### Google Kubernetes Engine (GKE) ###
 ######################################
 
 #Creating a cluster on GKE
 gcloud container clusters create webfrontend --zone $MY_ZONE --num-nodes 2
+
+#If zone is already set in gcloud config then it can be ommitted like so
+gcloud container clusters create networklb --num-nodes 3  
 
 #List all running clusters
 gcloud container clusters list
@@ -326,15 +351,13 @@ gcloud container clusters resize my-regional-cluster --region us-central1 --node
 #Resize Kubernetes Cluser
 gcloud container clusters resize  webfrontend --size=2 --zone us-central1-a
 
-#Deleting your Cluster
-
-
 #Delete Deployment/Workloads in GKE
 kubectl describe deployment nginx-1
 kubectl delete deployment nginx-1
 
 #Delete cluster in GKE
 gcloud container clusters delete webfrontend --zone us-central1-a
+gcloud container clusters delete networklb
 
 #Create Regional cluster in GKE (default runs in 3 zones in that Region)
 gcloud container clusters create my-regional-cluster \
@@ -383,7 +406,7 @@ kubectl cluster-info
 
 #Get listing of pods
 kubectl get pods
-kubectl get pods -o=wide #to get all pods in cluster
+kubectl get pods -owide #to get all pods in cluster
 kubectl get pod -l app=nginx #to select via label selector
 
 #Get listing of nodes
@@ -416,8 +439,64 @@ kubectl delete deployment nginx-1
 kubectl expose deployment nginx --port 80 --target-port 80 --type LoadBalancer
 kubectl expose deployment test-website --type LoadBalancer --port 80 --target-port 80
 
+#For reasons on when you would use ClusterIP, NodePort, or Loadbalancer see this link:
+https://medium.com/google-cloud/kubernetes-nodeport-vs-loadbalancer-vs-ingress-when-should-i-use-what-922f010849e0
+
+#Exposing Service on each Node's IP at a static port (the NodePort)
+kubectl expose deployment nginx --target-port=80 --type=NodePort0
+
+#To Use a Cloud Load Balancer to expose services using the NodePort first create an ingress.yaml file
+nano ingress.yaml
+
+#Example Ingress file
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: basic-ingress
+spec:
+  backend:
+    serviceName: nginx
+    servicePort: 80
+
+#More Advanced Ingress file #You can define rules that direct traffic by host/path to multiple Kubernetes services.
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: example-ingress
+spec:
+  backend:
+    serviceName: default-handler
+    servicePort: 80
+  rules:
+  - host: my.app.com
+    http:
+      paths:
+      - path: /tomcat
+        backend:
+          serviceName: tomcat
+          servicePort: 8080
+      - path: /nginx
+        backend:
+          serviceName: nginx
+          servicePort: 80
+
+#Now create the ingress service
+kubectl create -f ingress.yaml
+
+#Monitor the progress of the ingress service (ctrl+C to break out)
+kubectl get ingress basic-ingress --watch
+
+#Check status of ingress service
+kubectl describe ingress basic-ingress
+
+#Lastly to get external IP address of this httploadbalancer
+kubectl get ingress basic-ingress
+
 #Autoscale a deployment
 kubectl autoscale deployment php-apache --cpu-percent=50 --min=1 --max=10
+
+#Delete the ingress object
+kubectl delete -f basic-ingress.yaml
 
 #Get status of Horizontal Pool Autoscaler
 kubectl get hpa
@@ -600,6 +679,74 @@ jsonpath="{.status.loadBalancer.ingress[0].ip}" \
  --namespace=production services gceme-frontend)
 
 
+#########################
+####    App Engine   ####
+#########################
+
+#### Download a sample Hello World App Engine app
+mkdir appengine-hello
+cd appengine-hello
+gsutil cp gs://cloud-training/archinfra/gae-hello/* .
+
+#### Run the sample Hello World app in Cloud Shell's local development server
+dev_appserver.py $(pwd)
+
+#### Afer running the above command go to In click Web Preview in Cloud Shell to Preview on port 8080
+
+#### To deploy app to App Engine
+gcloud app deploy app.yaml
+
+#### Once deployed you can test your app by going to the URL provide with this command
+gcloud app browse
+
+#### To redeploy app in App Engine (The --quiet flag disables all interactive prompts when running gcloud commands. If input is required, defaults will be us)
+gcloud app deploy app.yaml --quiet
+
+#########################
+####    Cloud SQL    ####
+#########################
+
+#### Different Connection methods to connect to Cloud SQL
+https://cloud.google.com/sql/docs/mysql/external-connection-methods?hl=en_US&_ga=2.121186319.-668297787.1549999676
+
+
+########################
+####    BigQuery    ####
+########################
+
+#### Example Syntax for a query in BigQuery
+SELECT *
+FROM [DatasetID.TableID]
+WHERE (DatasetID.TableID.Field > 0);
+
+#### Example BigQuery from example dataset that has 22,537 records
+SELECT product, resource_type, start_time, end_time,
+cost, project_id, project_name, project_labels_key, currency, currency_conversion_rate,
+usage_amount, usage_unit
+FROM [cloud-training-prod-bucket.arch_infra.billing_data]
+WHERE ([cloud-training-prod-bucket.arch_infra.billing_data.cost] > 0)
+  LIMIT 100
+
+#### Grouping data in your Query
+SELECT product, COUNT(*)
+FROM [cloud-training-prod-bucket.arch_infra.billing_data]
+WHERE ([cloud-training-prod-bucket.arch_infra.billing_data.cost] > 1)
+GROUP BY product
+
+
+########################
+#### Stack Driver   ####
+########################
+
+#### To install Stack Driver monitoring agent
+curl -O https://repo.stackdriver.com/stack-install.sh
+sudo bash stack-install.sh --write-gcm
+
+#### To install Stack Driver logging agent (for EC2 and Compute Engine resources as App Engine Kubernetes engine have it built-in already)
+curl -sSO https://dl.google.com/cloudagents/install-logging-agent.sh
+sudo bash install-logging-agent.sh
+
+#### Note that Stackdriver Logging only keeps logs for 30 days. To keep logs longer they need to be exported to Cloud Storage
 
 #################################
 ###  Cloud Source Repository  ###
