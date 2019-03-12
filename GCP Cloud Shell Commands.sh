@@ -20,6 +20,9 @@ gcloud config set project $DEVSHELL_PROJECT_ID
 #Get current GCloud config
 gcloud config list
 
+#Get all GCloud Configs, even ones that arent set yet
+gcloud config list --all
+
 #Get Project ID of current project
 gcloud config get-value project
 
@@ -239,6 +242,136 @@ gcloud compute firewall-rules create nginx-firewall \
  --allow tcp:80,tcp:443 \
  --target-tags nginxstack-tcp-80,nginxstack-tcp-443
  
+ 
+###################################################
+####     Create VPN for VPC Network Peering    ####
+###################################################
+
+#### Need to create a VPN gateway on each VPC network in order to peer networks together
+gcloud compute target-vpn-gateways \
+create vpn-1 \
+--network vpn-network-1  \
+--region us-east1
+
+gcloud compute target-vpn-gateways \
+create vpn-2 \
+--network vpn-network-2  \
+--region europe-west1
+
+#### Reserve static IP address for VPN
+gcloud compute addresses create --region us-east1 vpn-1-static-ip
+gcloud compute addresses create --region europe-west1 vpn-2-static-ip
+
+#### View static IP address for VPN
+gcloud compute addresses list
+
+NAME             ADDRESS/RANGE  TYPE  PURPOSE  NETWORK  REGION    SUBNET  STATUS
+vpn-1-static-ip  34.73.244.192                          us-east1          RESERVED
+vpn-2-static-ip  34.76.176.141                          europe-west1      RESERVED
+
+#### Create ESP Firewall rule for VPN Gateway
+gcloud compute \
+forwarding-rules create vpn-1-esp \
+--region us-east1  \
+--ip-protocol ESP  \
+--address $STATIC_IP_VPN_1 \
+--target-vpn-gateway vpn-1
+
+gcloud compute \
+forwarding-rules create vpn-2-esp \
+--region europe-west1  \
+--ip-protocol ESP  \
+--address $STATIC_IP_VPN_2 \
+--target-vpn-gateway vpn-2
+
+#### Create UDP500 Firewall rule for VPN Gateway
+gcloud compute \
+forwarding-rules create vpn-1-udp500  \
+--region us-east1 \
+--ip-protocol UDP \
+--ports 500 \
+--address $STATIC_IP_VPN_1 \
+--target-vpn-gateway vpn-1
+
+gcloud compute \
+forwarding-rules create vpn-2-udp500  \
+--region europe-west1 \
+--ip-protocol UDP \
+--ports 500 \
+--address $STATIC_IP_VPN_2 \
+--target-vpn-gateway vpn-2
+
+#### Create UDP4500 Firewall Rule for VPN Gateway
+gcloud compute \
+forwarding-rules create vpn-1-udp4500  \
+--region us-east1 \
+--ip-protocol UDP --ports 4500 \
+--address $STATIC_IP_VPN_1 \
+--target-vpn-gateway vpn-1
+
+gcloud compute \
+forwarding-rules create vpn-2-udp4500  \
+--region europe-west1 \
+--ip-protocol UDP --ports 4500 \
+--address $STATIC_IP_VPN_2 \
+--target-vpn-gateway vpn-2
+
+#### List VPN Gateways
+gcloud compute target-vpn-gateways list
+
+NAME   NETWORK        REGION
+vpn-2  vpn-network-2  europe-west1
+vpn-1  vpn-network-1  us-east1
+
+
+#### Creat tunnels for VPN Gateway
+#### Tunnel network1-to-network2
+gcloud compute \
+vpn-tunnels create tunnel1to2  \
+--peer-address $STATIC_IP_VPN_2 \
+--region us-east1 \
+--ike-version 2 \
+--shared-secret gcprocks \
+--target-vpn-gateway vpn-1 \
+--local-traffic-selector 0.0.0.0/0 \
+--remote-traffic-selector 0.0.0.0/0
+
+#### Tunnel network2-to-network1
+gcloud compute \
+vpn-tunnels create tunnel2to1 \
+--peer-address $STATIC_IP_VPN_1 \
+--region europe-west1 \
+--ike-version 2 \
+--shared-secret gcprocks \
+--target-vpn-gateway vpn-2 \
+--local-traffic-selector 0.0.0.0/0 \
+--remote-traffic-selector 0.0.0.0/0
+
+#### View VPN Tunnels
+gcloud compute vpn-tunnels list
+
+NAME        REGION        GATEWAY  PEER_ADDRESS
+tunnel2to1  europe-west1  vpn-2    34.73.244.192
+tunnel1to2  us-east1      vpn-1    34.76.176.141
+
+#### Create Static Routes
+gcloud compute  \
+routes create route1to2  \
+--network vpn-network-1 \
+--next-hop-vpn-tunnel tunnel1to2 \
+--next-hop-vpn-tunnel-region us-east1 \
+--destination-range 10.1.3.0/24
+
+gcloud compute  \
+routes create route2to1  \
+--network vpn-network-2 \
+--next-hop-vpn-tunnel tunnel2to1 \
+--next-hop-vpn-tunnel-region europe-west1 \
+--destination-range 10.5.4.0/24
+
+#### List all routes
+gcloud compute routes list
+
 
 ###################################
 ### Google Compute Engine (GCE) ###
@@ -246,6 +379,13 @@ gcloud compute firewall-rules create nginx-firewall \
 
 #### List all compute instances
 gcloud compute instances list
+
+#### Create a VM Instance using Cloud Shell
+gcloud compute instances create testvm1 --zone us-central1-c
+
+#### SSH into the new VM instance straight from Cloud Shell
+gcloud compute ssh testvm1 --zone us-central1-c
+
 
 # Using for loop to create multiple Compute VM Instances (eg. 3 nginx instances)
 for i in {1..3}; \
@@ -259,6 +399,9 @@ do \
   --boot-disk-device-name "nginx-$i"; \
 done
 
+#### Delete VM Instance
+gcloud compute instances delete [vm-name] --keep-disks
+
 # Authorize VM to use the Google Cloud API via Service Account
 gcloud auth activate-service-account --key-file credentials.json
 
@@ -269,6 +412,56 @@ https://cloud.google.com/sdk/downloads
 # To add start-up script to VM add custom metadata to VM in edit screen with key name startup-script
 # You can do the same for shutdown script by added a custom metadata with key name shutdown-script
 
+
+#### Creating a persistant disk
+gcloud compute instances attach-disk gcelab --disk mydisk --zone us-central1-c
+
+#### Attaching a persistant disk
+gcloud compute instances attach-disk gcelab --disk mydisk --device-name <YOUR_DEVICE_NAME> --zone us-central1-c
+
+#### To mount and format a Persistent Disk
+# Create a folder to act as a mount point 
+sudo mkdir /mnt/mydisk
+
+# Get disk ID
+ls -l /dev/disk/by-id/
+
+# Format the attached disk
+sudo mkfs.ext4 -F -E lazy_itable_init=0,\
+lazy_journal_init=0,discard \
+/dev/disk/by-id/[disk name]
+#example:
+sudo mkfs.ext4 -F -E lazy_itable_init=0,lazy_journal_init=0,discard /dev/disk/by-id/scsi-0Google_PersistentDisk_persistent-disk-1
+
+# Mount the disk
+sudo mount -o discard,defaults /dev/disk/by-id/[disk name] /mnt/[mount point]
+#example:
+sudo mount -o discard,defaults /dev/disk/by-id/scsi-0Google_PersistentDisk_persistent-disk-1 /mnt/mydisk
+
+#### Automatically mount the disk on restart
+# Edit fstab file
+sudo nano /etc/fstab
+
+# Add following line at the end of the file and save
+/dev/disk/by-id/[disk name] /mnt/[mount folder] ext4 defaults 1 1
+# example:
+/dev/disk/by-id/scsi-0Google_PersistentDisk_persistent-disk-1 /mnt/mydisk ext4 defaults 1 1
+
+
+
+#### For migrating data from a persistant disk to another region:
+# 1. Unmount file system(s)
+# 2. Create snapshot
+# 3. Create disk in new region from snapshot
+# 4. Create instance in new region
+# 5. Attach disk
+
+#### For documentation on using Local SSDs (best used as swap disk fro their fast performance, but lack of redundancy)
+https://cloud.google.com/compute/docs/disks/local-ssd#create_a_local_ssd
+
+##########################################
+####    Other Useful Linux commands   ####
+##########################################
 
 # For snapshoting boot disk safest is to halt/shutdown the system
 sudo shutdown -h now
@@ -283,26 +476,6 @@ sudo sync
 #3. Suspend/freeze writing to disk device
 sudo fsfreeze -f </mount/point>
 
-
-# To see information about unused and used memory and swap space on your custom VM, run the following command:
-free
-
-# To see details about the RAM installed on your VM, run the following command:
-sudo dmidecode -t 17
-
-# To verify the number of processors, run the following command:
-nproc
-
-#To see details about the CPUs installed on your VM, run the following command:
-lscpu
-
-# to mount a persistent disk 
-sudo mkfs.ext4 -F -E lazy_itable_init=0,\
-lazy_journal_init=0,discard \
-/dev/disk/by-id/[disk name]
-
-sudo mount -o discard,defaults /dev/disk/by-id/[disk name] /home/[mount point]
-
 # Using screen to run a detached session
 sudo apt-get install -y screen
 
@@ -315,6 +488,17 @@ sudo screen -r -X [name of scree] '[command]\n'
 # Setting up a crontab job
 sudo crontab -e
 
+# To see information about unused and used memory and swap space on your custom VM, run the following command:
+free
+
+# To see details about the RAM installed on your VM, run the following command:
+sudo dmidecode -t 17
+
+# To verify the number of processors, run the following command:
+nproc
+
+#To see details about the CPUs installed on your VM, run the following command:
+lscpu
 
 ######################################
 ### Google Kubernetes Engine (GKE) ###
@@ -397,12 +581,25 @@ gcloud beta container clusters get-credentials my-regional-cluster \
 gcloud container clusters get-credentials test-cluster --zone us-central1-a --project qwiklabs-gcp-2de127a77da5556b
 
 
+# Build docker container (requires a Dockerfile in current directory)
+docker build -t gcr.io/PROJECT_ID/hello-node:v1 .
+
+# Run docker image
+docker run -d -p 8080:8080 gcr.io/PROJECT_ID/hello-node:v1
+
+# Push to Google Docker Private Registry
+gcloud docker -- push gcr.io/PROJECT_ID/hello-node:v1
+
 #######################
 ### Using Kubectl   ###
 #######################
 
 #Get cluster information
 kubectl cluster-info
+
+#For troubleshooting 
+kubectl get events
+kubectl logs <pod-name>
 
 #Get listing of pods
 kubectl get pods
@@ -492,8 +689,15 @@ kubectl describe ingress basic-ingress
 #Lastly to get external IP address of this httploadbalancer
 kubectl get ingress basic-ingress
 
+# Scale up a deployment
+kubectl scale deployment hello-node --replicas=4
+
 #Autoscale a deployment
 kubectl autoscale deployment php-apache --cpu-percent=50 --min=1 --max=10
+
+#### Edit a deployment file
+kubectl edit deployment hello-node
+
 
 #Delete the ingress object
 kubectl delete -f basic-ingress.yaml
@@ -679,6 +883,32 @@ jsonpath="{.status.loadBalancer.ingress[0].ip}" \
  --namespace=production services gceme-frontend)
 
 
+########################################
+####   Kubernetes Dashboard Beta    ####
+########################################
+
+#### First grant cluster level permissions
+kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-admin --user=$(gcloud config get-value account)
+
+#### Create a new dashboard
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml
+
+#### Edit yaml file for dashboard
+kubectl -n kube-system edit service kubernetes-dashboard
+# change "type: ClusterIP" to "type: NodePort" and save file
+
+#### Get Token for logging into K8s Dashboard
+kubectl -n kube-system describe $(kubectl -n kube-system \
+get secret -n kube-system -o name | grep namespace) | grep token:
+
+#### Open connection to dashboard on port 8081 for example
+kubectl proxy --port 8081
+# use Cloud Shell's web preview and change port to 8081 to view the page. You first need to remove the /?authuser=0 and then add the /api/v1/... similar to the URL below to access the dashboard
+
+https://8081-dot-6692035-dot-devshell.appspot.com/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/#!/service?namespace=default
+
+# Select Token and paste in the Token you copied above to access the Dashboard
+
 #########################
 ####    App Engine   ####
 #########################
@@ -776,3 +1006,21 @@ gsutil cp gs://cloud-training/gcpfcoreinfra/mydeploy.yaml mydeploy.yaml
 
 #Creating deployment from yaml file
 gcloud deployment-manager deployments create my-first-depl --config mydeploy.yaml
+
+
+##############################################
+####    Using Terraform in Cloud Shell    ####
+##############################################
+
+#Download and Install Terraform
+wget https://releases.hashicorp.com/terraform/0.11.13/terraform_0.11.13_linux_amd64.zip
+unzip terraform_0.11.13_linux_amd64.zip
+
+#Export Terraform path
+export PATH="$PATH:$HOME/terraform"
+cd /usr/bin
+sudo ln -s $HOME/terraform
+cd $HOME
+source ~/.bashrc
+
+# Now you can use Terraform init, plan, apply, etc. without having to specify the Google Cloud (GCP) provider or use a credentials file from a service account to provision infrastructure!
