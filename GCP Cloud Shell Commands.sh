@@ -53,15 +53,7 @@ gcloud compute regions list
 
 asia-southeast1          0/24  0/4096    0/8        0/8                 UP
 australia-southeast1     0/24  0/4096    0/8        0/8                 UP
-europe-north1            0/24  0/4096    0/8        0/8                 UP
-europe-west1             0/24  0/4096    0/8        0/8                 UP
-europe-west2             0/24  0/4096    0/8        0/8                 UP
-europe-west3             0/24  0/4096    0/8        0/8                 UP
-europe-west4             0/24  0/4096    0/8        0/8                 UP
-northamerica-northeast1  0/24  0/4096    0/8        0/8                 UP
-southamerica-east1       0/24  0/4096    0/8        0/8                 UP
-us-central1              0/24  0/4096    0/8        0/8                 UP
-us-east1                 0/24  0/4096    0/8        0/8                 UP
+...
 us-east4                 0/24  0/4096    0/8        0/8                 UP
 us-west1                 0/24  0/4096    0/8        0/8                 UP
 us-west2                 0/24  0/4096    0/8        0/8                 UP
@@ -103,7 +95,8 @@ sudo rm -rf $HOME
 User Account = $(gcloud config get-value account)
 Project ID   = $(gcloud config get-value project -q)
 
-
+#### Access GCP Console for a particular project: (for sharing with other team members after they have been granted access to that project in IAM)
+https://console.cloud.google.com/compute/instances?project=yourprojectname
 
 #############################
 ### Cloud Storage Buckets ###
@@ -115,14 +108,14 @@ gsutil mb gs://[bucket-name]
 #### Displaying the contents of a Storage Bucket
 gsutil ls gs://[bucket-name]
 
+#### Viewing the contents of a file in a Storage Bucket
+gsutil cat gs://super-cool-bucket/sample.txt
+
 #### Copying a file from Cloud Shell to Storage Bucket
 gsutil cp my-file.txt gs://[bucket-name]
 
 #### Copy a file from Storage Bucket to server/cloud shell
 gsutil cp gs://[bucket-name]/sample.txt .
-
-#### Displaying the contents of a Storage Bucket
-gsutil ls gs://[bucket-name]
 
 #### To get access control list for a file in Cloud Bucket
 gsutil acl get gs://$BUCKET_NAME_1/setup.html  > acl.txt
@@ -207,23 +200,30 @@ gsutil rsync -r ./folder gs://$BUCKET_NAME_1/folder
 gcloud compute forwarding-rules list
 
 # Creating Automode network and associated Firewall rules
-gcloud compute --project=learning-automation-io-test networks create learnauto --description="Learn about auto-mode networks" --subnet-mode=auto
+gcloud compute networks create learnauto --description="Learn about auto-mode networks" --subnet-mode=auto
+gcloud compute firewall-rules create learnauto-allow-ssh --description="Allows TCP connections from any source to any instance on the network using port 22." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=tcp:22 --source-ranges=0.0.0.0/0
+gcloud compute firewall-rules create learnauto-allow-rdp --description="Allows RDP connections from any source to any instance on the network using port 3389." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=tcp:3389 --source-ranges=0.0.0.0/0
+gcloud compute firewall-rules create learnauto-allow-icmp --description="Allows ICMP connections from any source to any instance on the network." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=icmp --source-ranges=0.0.0.0/0
+gcloud compute firewall-rules create learnauto-allow-internal --description="Allows connections from any source in the network IP range to any instance on the network using all protocols." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=all --source-ranges=10.128.0.0/9
 
-gcloud compute --project=learning-automation-io-test firewall-rules create learnauto-allow-ssh --description="Allows TCP connections from any source to any instance on the network using port 22." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=tcp:22 --source-ranges=0.0.0.0/0
+#### List Firewall Rules for given network
+gcloud beta compute firewall-rules list \
+--filter="network:mynetwork"
 
-gcloud compute --project=learning-automation-io-test firewall-rules create learnauto-allow-rdp --description="Allows RDP connections from any source to any instance on the network using port 3389." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=tcp:3389 --source-ranges=0.0.0.0/0
+gcloud beta compute firewall-rules list \
+--filter="network:mynetwork AND name=mynetwork-deny-icmp"
 
-gcloud compute --project=learning-automation-io-test firewall-rules create learnauto-allow-icmp --description="Allows ICMP connections from any source to any instance on the network." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=icmp --source-ranges=0.0.0.0/0
+#### Create Custom VPN Network
+gcloud compute networks create network-a --subnet-mode custom
 
-gcloud compute --project=learning-automation-io-test firewall-rules create learnauto-allow-internal --description="Allows connections from any source in the network IP range to any instance on the network using all protocols." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=all --source-ranges=10.128.0.0/9
-
-
-# create a subnet and alias ip range
-
+#### create a subnet and alias ip range
 gcloud compute networks subnets create subnet-a \
     --network network-a \
     --range 10.128.0.0/16 \
     --secondary-range container-range=172.16.0.0/20
+
+#### List subnets in a given network
+gcloud compute networks subnets list --network network-a
 
 # Create VMs with alias
 gcloud compute instances create vm1 [...] \
@@ -237,12 +237,45 @@ expand-ip-range new-useast  \
 --prefix-length 23 \
 --region us-east1
 
+# Example Firewall rule to allow connections on port 80 for webtraffic (will default to ingress and 0.0.0.0/0)
+gcloud compute firewall-rules create www-firewall --allow tcp:80
+
+# Example Firewall rule to allow egress traffic on port 80
+gcloud compute firewall-rules create egress-firewall --direction egress --allow tcp:80
+
 #### Create firewall rule to allow external traffic on port 80 and 443 (eg. for nginx)
 gcloud compute firewall-rules create nginx-firewall \
  --allow tcp:80,tcp:443 \
  --target-tags nginxstack-tcp-80,nginxstack-tcp-443
  
+#### Create Network Load Balancer targeting an Instance group
+gcloud compute forwarding-rules create nginx-lb \
+         --region us-central1 \
+         --ports=80 \
+         --target-pool nginx-pool
  
+#### Show forwarding rules
+gcloud compute forwarding-rules list
+
+#### Delete a subnet
+gcloud compute networks subnets delete subnet-asia-east --region asia-east1
+
+#### Delete a Network (note you have to delete all subnets in that Network before deleting the Network)
+gcloud compute networks delete network-a
+
+#### More info on GCP Firewall rules
+https://cloud.google.com/compute/docs/vpc/firewalls
+
+
+#### Create NAT Gateway
+gcloud compute routes create nat-route --network private-network \
+--destination-range 0.0.0.0/0 --next-hop-instance private-bastion-host \
+--next-hop-instance-zone us-central1-c --tags nat-me --priority 800
+
+#### Then log into Bastion Host VM and activate IP forwarding
+sudo sysctl -w net.ipv4.ip_forward=1
+sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
 ###################################################
 ####     Create VPN for VPC Network Peering    ####
 ###################################################
@@ -458,6 +491,67 @@ sudo nano /etc/fstab
 
 #### For documentation on using Local SSDs (best used as swap disk fro their fast performance, but lack of redundancy)
 https://cloud.google.com/compute/docs/disks/local-ssd#create_a_local_ssd
+
+#### Add tags to an instance
+gcloud compute instances add-tags testvm --zone us-central1-a --tags web-server
+
+
+##################################
+####    Instance Templates    ####
+##################################
+
+#### Create an instance template (along with a startup script)
+gcloud compute instance-templates create nginx-template \
+--metadata-from-file startup-script=startup.sh
+ 
+#### Create a target pool for all instances in a group
+gcloud compute target-pools create nginx-pool
+
+#### Create a managed instance goup
+gcloud compute instance-groups managed create nginx-group \
+--base-instance-name nginx \
+--size 2 \
+--template nginx-template \
+--target-pool nginx-pool
+
+
+#### Creating a HTTP(s) Load Balancer for a Managed Instance Group ####
+
+#### Create a basic HTTP Health Check
+gcloud compute http-health-checks create http-basic-check
+
+#### Define an HTTP server and map a port name to Instance group
+gcloud compute instance-groups managed \
+set-named-ports nginx-group \
+--named-ports http:80
+
+#### Create a backend service
+gcloud compute backend-services create nginx-backend \
+--protocol HTTP --http-health-checks http-basic-check --global
+
+#### Add Instance group to backend service
+gcloud compute backend-services add-backend nginx-backend \
+    --instance-group nginx-group \
+    --instance-group-zone us-central1-a \
+    --global
+  
+#### Create a defaul URL map that directs all incoming traffic to Instances
+gcloud compute url-maps create web-map \
+    --default-service nginx-backend
+
+#### For specific content-based routing see this link
+https://cloud.google.com/compute/docs/load-balancing/http/content-based-example
+
+#### Create a target HTTP proxy to route requests to your URL map
+gcloud compute target-http-proxies create http-lb-proxy \
+    --url-map web-map
+
+#### Lastly, create a global forwarding rule (this should give the Load Balanced IP to use)
+gcloud compute forwarding-rules create http-content-rule \
+        --global \
+        --target-http-proxy http-lb-proxy \
+        --ports 80
+
 
 ##########################################
 ####    Other Useful Linux commands   ####
