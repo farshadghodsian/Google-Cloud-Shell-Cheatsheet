@@ -93,11 +93,30 @@ sudo rm -rf $HOME
 
 ## Referencing values in Cloud Shell commands
 User Account = $(gcloud config get-value account)
-Project ID   = $(gcloud config get-value project -q)
+Project ID   = $(gcloud config get-value project -q)   or $(gcloud info --format='value(config.project)')
 User Email   =$(gcloud auth list --limit=1 2>/dev/null | grep '@' | awk '{print $2}')
+Service Account Email = export SA_EMAIL=$(gcloud iam service-accounts list --filter="displayName:spinnaker-storage-account" --format='value(email)')
 
 #### Access GCP Console for a particular project: (for sharing with other team members after they have been granted access to that project in IAM)
 https://console.cloud.google.com/compute/instances?project=yourprojectname
+
+
+###########################
+####    IAM & Admin    ####
+###########################
+
+#### Create a Service Account
+gcloud iam service-accounts create  spinnaker-storage-account \
+    --display-name spinnaker-storage-account
+
+#### Bind a service account to a particular access policy
+gcloud projects add-iam-policy-binding \
+    $PROJECT --role roles/storage.admin --member serviceAccount:$SA_EMAIL
+
+#### Create and download service account key
+gcloud iam service-accounts keys create spinnaker-sa.json \
+     --iam-account $SA_EMAIL
+
 
 #############################
 ### Cloud Storage Buckets ###
@@ -728,6 +747,9 @@ kubectl get nodes
 kubectl get services
 kubectl get service nginx
 
+#Get 
+kubectl get service [service_name] | awk 'BEGIN { cnt=0; } { cnt+=1; if (cnt > 1) print $4;}''
+
 #Get current context for your session (to determine which cluster etc. kubectl will use)
 kubectl config current-context
 
@@ -1098,7 +1120,7 @@ sudo bash install-logging-agent.sh
 #################################
 
 #Create a repo
-gcloud alpha source repos create test_repo
+gcloud source repos create test_repo
 
 #Use GCloud Credential helper
 git config credential.helper gcloud.sh
@@ -1116,11 +1138,14 @@ git config --global user.name "Google Tester"
 ### USING DEPLOYMENT MANAGER ###
 ################################
 
-#Copying file from Google Cloud resource to your Cloud Shell terminal (using gsutil)
+# Copying file from Google Cloud resource to your Cloud Shell terminal (using gsutil)
 gsutil cp gs://cloud-training/gcpfcoreinfra/mydeploy.yaml mydeploy.yaml
 
-#Creating deployment from yaml file
+# Creating deployment from yaml file
 gcloud deployment-manager deployments create my-first-depl --config mydeploy.yaml
+
+# Sample Deployment manager templats from Google
+https://github.com/GoogleCloudPlatform/deploymentmanager-samples
 
 #########################
 ####    Cloud KMS    ####
