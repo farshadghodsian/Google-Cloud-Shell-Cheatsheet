@@ -94,6 +94,7 @@ sudo rm -rf $HOME
 ## Referencing values in Cloud Shell commands
 User Account = $(gcloud config get-value account)
 Project ID   = $(gcloud config get-value project -q)
+User Email   =$(gcloud auth list --limit=1 2>/dev/null | grep '@' | awk '{print $2}')
 
 #### Access GCP Console for a particular project: (for sharing with other team members after they have been granted access to that project in IAM)
 https://console.cloud.google.com/compute/instances?project=yourprojectname
@@ -697,8 +698,28 @@ kubectl logs <pod-name>
 
 #Get listing of pods
 kubectl get pods
+kubectl get pods --show-labels  #get list of pods and show their labels
 kubectl get pods -owide #to get all pods in cluster
 kubectl get pod -l app=nginx #to select via label selector
+kubectl get pods -l "app=monolith,secure=enabled" #to select via multiple label selector
+
+#Get more details about pods (including event log)
+kubectl describe pods nginx
+
+#Add labels to a pod
+kubectl label pods secure-nginx 'secure=enabled'
+kubectl get pods secure-nginx --show-labels
+
+#Get Pod log stream in real time
+kubectl logs -f monolith
+
+#Set up port forwarding so that you can access port on a Pod from outside cluster
+kubectl port-forward monolith 10080:80
+#To test:
+curl http://127.0.0.1:10080
+
+#Log into a pod via interactive terminal
+kubectl exec monolith --stdin --tty -c monolith /bin/sh
 
 #Get listing of nodes
 kubectl get nodes
@@ -1101,6 +1122,91 @@ gsutil cp gs://cloud-training/gcpfcoreinfra/mydeploy.yaml mydeploy.yaml
 #Creating deployment from yaml file
 gcloud deployment-manager deployments create my-first-depl --config mydeploy.yaml
 
+#########################
+####    Cloud KMS    ####
+#########################
+
+#### Cloud KMS is a cryptographic key management service on GCP
+#### To Enable Cloud KMS
+gcloud services enable cloudkms.googleapis.com
+
+#### Create a Keyrin Grouping and Crytokey
+KEYRING_NAME=development CRYPTOKEY_NAME=dev-web
+gcloud kms keyrings create $KEYRING_NAME --location global
+
+gcloud kms keys create $CRYPTOKEY_NAME --location global \
+      --keyring $KEYRING_NAME \
+      --purpose encryption
+
+## Note: CryptoKeys and KeyRings cannot be deleted in Cloud KMS and have to be done in the console > IAM & Admin > Cryptogrphic keys > Go to Keo Management
+
+#### To Encrypting Data first encode file to Base64
+FILEBASE64=$(cat image.jpg | base64 -w0)
+
+#### Now encrypt the file using the CryptoKey you generated 
+curl -v "https://cloudkms.googleapis.com/v1/projects/$DEVSHELL_PROJECT_ID/locations/global/keyRings/$KEYRING_NAME/cryptoKeys/$CRYPTOKEY_NAME:encrypt" \
+  -d "{\"plaintext\":\"$FILEBASE64\"}" \
+  -H "Authorization:Bearer $(gcloud auth application-default print-access-token)"\
+  -H "Content-Type:application/json" \
+| jq .ciphertext -r > image.jpg.encrypted
+
+## This command makes an API call to Cloud KMS to encrypt the base64 encoded string you created and then pipes the ciphertext value returned in the JSON response out to a file named .encrypted using jq (can be any filename or extension)
+
+#### To decrypt and view contents of the file you can call the Cloud KMS Decrypt API
+curl -v "https://cloudkms.googleapis.com/v1/projects/$DEVSHELL_PROJECT_ID/locations/global/keyRings/$KEYRING_NAME/cryptoKeys/$CRYPTOKEY_NAME:decrypt" \
+  -d "{\"ciphertext\":\"$(cat image.jpg.encrypted)\"}" \
+  -H "Authorization:Bearer $(gcloud auth application-default print-access-token)"\
+  -H "Content-Type:application/json" \
+| jq .plaintext -r | base64 -d
+
+#### Same as above, but to decrypt and save the contents to a file
+curl -v "https://cloudkms.googleapis.com/v1/projects/$DEVSHELL_PROJECT_ID/locations/global/keyRings/$KEYRING_NAME/cryptoKeys/$CRYPTOKEY_NAME:decrypt" \
+  -d "{\"ciphertext\":\"$(cat image.jpg.encrypted)\"}" \
+  -H "Authorization:Bearer $(gcloud auth application-default print-access-token)"\
+  -H "Content-Type:application/json" \
+| jq .plaintext -r | base64 -d > image.jpg
+
+
+#### Cloud KMS Quickstart Guide
+https://cloud.google.com/kms/docs/quickstart
+
+
+## The IAM permission to manage keys is 
+cloudkms.admin
+
+
+## The IAM permission to encrypt and decrypt (used to call the encrypt and decrypt API endpoints) is
+cloudkms.cryptoKeyEncrypterDecrypter
+
+
+#### Grant current Cloud Shell user cloudkms.admin and cloudkms.cryptoKeyEncrypterDecrypter role
+USER_EMAIL=$(gcloud auth list --limit=1 2>/dev/null | grep '@' | awk '{print $2}')
+gcloud kms keyrings add-iam-policy-binding $KEYRING_NAME \
+--location global \
+--member user:$USER_EMAIL \
+--role roles/cloudkms.admin
+
+gcloud kms keyrings add-iam-policy-binding $KEYRING_NAME \
+--location global \
+--member user:$USER_EMAIL \
+--role roles/cloudkms.cryptoKeyEncrypterDecrypter
+
+#### Encrypt an entire Folder
+MYDIR=myfolder
+FILES=$(find $MYDIR -type f -not -name "*.encrypted")
+for file in $FILES; do
+  PLAINTEXT=$(cat $file | base64 -w0)
+  curl -v "https://cloudkms.googleapis.com/v1/projects/$DEVSHELL_PROJECT_ID/locations/global/keyRings/$KEYRING_NAME/cryptoKeys/$CRYPTOKEY_NAME:encrypt" \
+    -d "{\"plaintext\":\"$PLAINTEXT\"}" \
+    -H "Authorization:Bearer $(gcloud auth application-default print-access-token)" \
+    -H "Content-Type:application/json" \
+  | jq .ciphertext -r > $file.encrypted
+done
+
+#### Upload encrypted folder to Cloud Storage Bucket
+gsutil -m cp myfolder/*.encrypted gs://${BUCKET_NAME}/myfoler
+
+## Note: Cloud Storage supports Server Side Encryption, which supports key rotation of your data and is the recommended way to encrypt data in Cloud Storage. See Cloud Storage section on Customer Supplied Encryption Key (CSEK)
 
 ##############################################
 ####    Using Terraform in Cloud Shell    ####

@@ -24,7 +24,10 @@ Cluster network: A set of links, logical or physical, that facilitate communicat
 
 Service: A Kubernetes Service that identifies a set of pods using label selectors. Unless mentioned otherwise, Services are assumed to have virtual IPs only routable within the cluster network.
 
-
+GKE Service Types:
+ClusterIP (internal) - the default type means that this Service is only visible inside of the cluster,
+NodePort - gives each node in the cluster an externally accessible IP and
+LoadBalancer - adds a load balancer from the cloud provider which forwards traffic from the service to Nodes within it.
 
 -= CI/CD =-
 
