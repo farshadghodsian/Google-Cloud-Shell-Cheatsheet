@@ -296,6 +296,92 @@ gcloud compute routes create nat-route --network private-network \
 sudo sysctl -w net.ipv4.ip_forward=1
 sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 
+#### Create External IP for NAT Gateway
+gcloud compute addresses create nat-1 --region us-east1
+
+nat_1_ip=$(gcloud compute addresses describe nat-1 \
+    --region us-east1 \
+    --format='value(address)')
+
+printf "The public NAT ip-address is :
+nat-1: $nat_1_ip\n"
+
+########################################################
+####    Create Network TCP External Load Balancer   ####
+########################################################
+
+#### First create your Compute instances that are going to be handling the requests
+#### Then create a a Health Check in Compute Engine on whatever specific port traffic is going to be directing too
+gcloud compute health-checks create tcp webserver-health --port 80
+
+#### Now create a target pool for the Load Balancer and add VM Instances to target pool
+gcloud compute target-pools create extloadbalancer \
+    --region $MY_REGION --http-health-check webserver-health
+
+gcloud compute target-pools add-instances extloadbalancer \
+    --instances webserver1,webserver2,webserver3 \
+     --instances-zone=$MY_ZONE1
+
+#### List Reserved Static IP Addresses
+gcloud compute addresses list
+
+#### Create forwarding rule for HTTP Load Balancer
+gcloud compute forwarding-rules create webserver-rule \
+    --region $MY_REGION --ports 80 \
+    --address $STATIC_EXTERNAL_IP --target-pool extloadbalancer
+
+#### The Load Balancer can be seen in the GCP console under Network services > Load Balancing
+#### The reserved Static IP can be seen in VPC network > External IP addresses
+
+#### Create Health check for Instance Groups
+gcloud compute health-checks create tcp my-tcp-health-check \
+    --port 80
+
+#### Create Backend group
+gcloud compute backend-services create my-int-lb \
+    --load-balancing-scheme internal \
+    --region $MY_REGION \
+    --health-checks my-tcp-health-check \
+    --protocol tcp
+
+#### Add instance group 1 & 2 to Backend
+gcloud compute backend-services add-backend my-int-lb \
+    --instance-group ig1 \
+    --instance-group-zone $MY_ZONE1 \
+    --region $MY_REGION
+
+gcloud compute backend-services add-backend my-int-lb \
+    --instance-group ig2 \
+    --instance-group-zone $MY_ZONE2 \
+    --region $MY_REGION
+
+#### Create a forwarding rule
+gcloud compute forwarding-rules create my-int-lb-forwarding-rule \
+    --load-balancing-scheme internal \
+    --ports 80 \
+    --network default \
+    --subnet default \
+    --region $MY_REGION \
+    --backend-service my-int-lb
+
+#### Create Firewall rule to allow for web traffic and health checks
+gcloud compute firewall-rules create allow-internal-lb \
+    --network default \
+    --source-ranges 0.0.0.0/0 \
+    --target-tags int-lb \
+    --allow tcp:80,tcp:443
+
+gcloud compute firewall-rules create allow-health-check \
+    --network default \
+    --source-ranges 130.211.0.0/22,35.191.0.0/16 \
+    --target-tags int-lb \
+    --allow tcp
+
+###############################################################
+####    Create Internal Load Balancer for Instance Groups   ####
+###############################################################
+
+
 ###################################################
 ####     Create VPN for VPC Network Peering    ####
 ###################################################
@@ -439,6 +525,14 @@ gcloud compute instances create testvm1 --zone us-central1-c
 #### SSH into the new VM instance straight from Cloud Shell
 gcloud compute ssh testvm1 --zone us-central1-c
 
+#### Create a VM instance with Tags and Meta-data startup script
+gcloud compute instances create webserver4 \
+--image-family debian-9 \
+--image-project debian-cloud \
+--tags int-lb \
+--zone $MY_ZONE2 \
+--subnet default \
+--metadata startup-script-url="gs://cloud-training/archinfra/mystartupscript",my-server-id="WebServer-4"
 
 # Using for loop to create multiple Compute VM Instances (eg. 3 nginx instances)
 for i in {1..3}; \
@@ -515,6 +609,8 @@ https://cloud.google.com/compute/docs/disks/local-ssd#create_a_local_ssd
 #### Add tags to an instance
 gcloud compute instances add-tags testvm --zone us-central1-a --tags web-server
 
+#### Authorize VM to use Cloud SDK via a service account credentials file
+gcloud auth activate-service-account --key-file credentials.json
 
 ##################################
 ####    Instance Templates    ####
@@ -523,7 +619,10 @@ gcloud compute instances add-tags testvm --zone us-central1-a --tags web-server
 #### Create an instance template (along with a startup script)
 gcloud compute instance-templates create nginx-template \
 --metadata-from-file startup-script=startup.sh
- 
+
+#### List instance templates
+gcloud compute instance-templates list
+
 #### Create a target pool for all instances in a group
 gcloud compute target-pools create nginx-pool
 
@@ -534,6 +633,8 @@ gcloud compute instance-groups managed create nginx-group \
 --template nginx-template \
 --target-pool nginx-pool
 
+#### List Instancec Groups
+gcloud compute instance-groups list
 
 #### Creating a HTTP(s) Load Balancer for a Managed Instance Group ####
 
@@ -572,7 +673,21 @@ gcloud compute forwarding-rules create http-content-rule \
         --target-http-proxy http-lb-proxy \
         --ports 80
 
+#### Create Unmanaged Instance group
+gcloud compute instance-groups unmanaged create ig1 \
+    --zone $MY_ZONE1
 
+#### Add VM instances to group
+gcloud compute instance-groups unmanaged add-instances ig1 \
+    --instances=webserver2,webserver3 --zone $MY_ZONE1
+
+#### Set Autohealng for instance
+gcloud beta compute instance-groups managed set-autohealing nat-1 \
+    --health-check nat-health-check \
+    --initial-delay 120 \
+    --zone us-east1-b
+
+    
 ##########################################
 ####    Other Useful Linux commands   ####
 ##########################################
@@ -748,7 +863,7 @@ kubectl get services
 kubectl get service nginx
 
 #Get 
-kubectl get service [service_name] | awk 'BEGIN { cnt=0; } { cnt+=1; if (cnt > 1) print $4;}''
+kubectl get service [service_name] | awk 'BEGIN { cnt=0; } { cnt+=1; if (cnt > 1) print $4;}'
 
 #Get current context for your session (to determine which cluster etc. kubectl will use)
 kubectl config current-context
@@ -1138,11 +1253,20 @@ git config --global user.name "Google Tester"
 ### USING DEPLOYMENT MANAGER ###
 ################################
 
+# To list types of resources you can control with Deployment manager
+gcloud deployment-manager types list
+
 # Copying file from Google Cloud resource to your Cloud Shell terminal (using gsutil)
 gsutil cp gs://cloud-training/gcpfcoreinfra/mydeploy.yaml mydeploy.yaml
 
 # Creating deployment from yaml file
 gcloud deployment-manager deployments create my-first-depl --config mydeploy.yaml
+
+# Basic configuration file
+https://cloud.google.com/deployment-manager/docs/configuration/create-basic-configuration
+
+# Creating template files
+https://cloud.google.com/deployment-manager/docs/step-by-step-guide/create-a-template
 
 # Sample Deployment manager templats from Google
 https://github.com/GoogleCloudPlatform/deploymentmanager-samples
