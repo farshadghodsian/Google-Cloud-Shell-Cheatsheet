@@ -3,7 +3,7 @@
 ###################################
 
 #Authenticate yourself in Cloud Shell (or change to another user)
-gcloud auth loggin
+gcloud auth login
 
 ##it will give you a URL to go to to authenticate (example shown below)
 https://accounts.google.com/o/oauth2/auth?redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob&prompt=select_account&response_type=code&client_id=32555940559.apps.googleusercontent.com&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fappengine.admin+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcompute+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Faccounts.reauth&access_type=offline
@@ -35,7 +35,7 @@ gcloud config get-value compute/zone
 
 #Set default Region/Zone
 gcloud config set compute/region
-gcloud config set computer/zone
+gcloud config set compute/zone
 
 #Get listing of current gcloud config settings like project ID
 gcloud config list
@@ -227,10 +227,10 @@ gcloud compute firewall-rules create learnauto-allow-icmp --description="Allows 
 gcloud compute firewall-rules create learnauto-allow-internal --description="Allows connections from any source in the network IP range to any instance on the network using all protocols." --direction=INGRESS --priority=65534 --network=learnauto --action=ALLOW --rules=all --source-ranges=10.128.0.0/9
 
 #### List Firewall Rules for given network
-gcloud beta compute firewall-rules list \
+gcloud compute firewall-rules list \
 --filter="network:mynetwork"
 
-gcloud beta compute firewall-rules list \
+gcloud compute firewall-rules list \
 --filter="network:mynetwork AND name=mynetwork-deny-icmp"
 
 #### Create Custom VPN Network
@@ -823,6 +823,9 @@ gcloud docker -- push gcr.io/PROJECT_ID/hello-node:v1
 ### Using Kubectl   ###
 #######################
 
+#Get Credentials of your cluster for Kubectl config
+gcloud container clusters get-credentials CLUSTERNAME
+
 #Get cluster information
 kubectl cluster-info
 
@@ -1092,12 +1095,40 @@ kubectl create secret generic mysql --from-literal=password=ReallyStrongPassword
             key: password
 ...
 
+#########################################
+####    Google Container Registry    ####
+#########################################
+
+#### Build/tag image that targets GCR
+docker build -t gcr.io/[project_id]/myapp:1.0
+
+#### Push Image to GCR
+gcloud docker -- push gcr.io/[project_id]/myapp:1.0
+
+#### Pull Image from GCR
+gcloud docker -- pull gcr.io/[project_id]/myapp:1.0
+
+####  Deploy docker image to GKE
+kubectl run my-app --image=gcr.io/[project_id]/myapp:1.0 --replicas=2
+
+
+#########################################
+####    Installing and Using Helm    ####
+#########################################
+
+#Installing Helm
+wget https://storage.googleapis.com/kubernetes-helm/helm-v2.9.1-linux-amd64.tar.gz
+tar zxfv helm-v2.9.1-linux-amd64.tar.gz
+cp linux-amd64/helm .
+
+
 #Setting current account as admin on cluster via role binding
 kubectl create clusterrolebinding cluster-admin-binding \
  --clusterrole=cluster-admin \
  --user=$(gcloud config get-value account)
 
- #Create service account (tiller is server side of Helm package manager)
+
+#Create service account (tiller is server side of Helm package manager)
  kubectl create serviceaccount tiller --namespace kube-system
 
 #Initiate Helm
@@ -1105,6 +1136,7 @@ kubectl create clusterrolebinding cluster-admin-binding \
 
 #Update Helm
 ./helm update
+./helm repo update
 
 #Check Helm version
 ./helm version
@@ -1246,7 +1278,11 @@ git remote add origin https://source.developers.google.com/p/learning-automation
 git config --global user.email "testaccount@google_test.com"
 git config --global user.name "Google Tester"
 
+#Clone a repo from Source Repositories
+gcloud source repos clone <reponame>
 
+#Get Auth token for GIT user
+gcloud auth print-access-token
 
 
 ################################
