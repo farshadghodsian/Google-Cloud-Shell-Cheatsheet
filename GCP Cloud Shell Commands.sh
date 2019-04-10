@@ -128,6 +128,9 @@ gsutil mb gs://[bucket-name]
 #### Displaying the contents of a Storage Bucket
 gsutil ls gs://[bucket-name]
 
+#### Displaying more details for an object in the bucket
+gsutil ls -l gs://[bucket-name]/file.txt
+
 #### Viewing the contents of a file in a Storage Bucket
 gsutil cat gs://super-cool-bucket/sample.txt
 
@@ -612,6 +615,12 @@ gcloud compute instances add-tags testvm --zone us-central1-a --tags web-server
 #### Authorize VM to use Cloud SDK via a service account credentials file
 gcloud auth activate-service-account --key-file credentials.json
 
+#### Reset Windows RDP password for Compute instance (will create that user account if the account does not already exist)
+gcloud compute reset-windows-password my-win-server --user admin --zone us-central1-a
+
+#### Get Serial output of compute instance
+gcloud compute instances get-serial-port-output instance-1 --zone us-central1-a
+
 ##################################
 ####    Instance Templates    ####
 ##################################
@@ -953,6 +962,14 @@ kubectl autoscale deployment php-apache --cpu-percent=50 --min=1 --max=10
 #### Edit a deployment file
 kubectl edit deployment hello-node
 
+#### Update an existing deployment/app to a newer version of docker image
+kubectl set image deployment/myapp myapp=gcr.io/[project-id]/myapp:v2
+
+#### Rolling back to the previous deployment/version of your app
+kubectl rollout undo deployment/myapp
+
+#### Watch status of rolling update for your deployment until completion
+kubectl rollout status -w deployment/myapp                    
 
 #Delete the ingress object
 kubectl delete -f basic-ingress.yaml
@@ -1100,7 +1117,10 @@ kubectl create secret generic mysql --from-literal=password=ReallyStrongPassword
 #########################################
 
 #### Build/tag image that targets GCR
-docker build -t gcr.io/[project_id]/myapp:1.0
+docker build -t gcr.io/[project_id]/myapp:1.0 .
+
+#### gcloud credential helper for Docker
+gcloud auth configure-docker
 
 #### Push Image to GCR
 gcloud docker -- push gcr.io/[project_id]/myapp:1.0
@@ -1292,20 +1312,64 @@ gcloud auth print-access-token
 # To list types of resources you can control with Deployment manager
 gcloud deployment-manager types list
 
+# For example you can grep to just list instances
+gcloud deployment-manager types list | grep instance
+
 # Copying file from Google Cloud resource to your Cloud Shell terminal (using gsutil)
 gsutil cp gs://cloud-training/gcpfcoreinfra/mydeploy.yaml mydeploy.yaml
 
 # Creating deployment from yaml file
-gcloud deployment-manager deployments create my-first-depl --config mydeploy.yaml
+gcloud deployment-manager deployments create my-first-deployment --config mydeploy.yaml
+
+# Describe your deployment
+gcloud deployment-manager deployments describe my-first-deployment
+
+# View manifest of your deployment
+gcloud deployment-manager manifests describe manifest-1553994903827 --deployment my-first-deployment
 
 # Basic configuration file
 https://cloud.google.com/deployment-manager/docs/configuration/create-basic-configuration
+
+# Example Basic VM config file
+resources:
+- name: myfirstvm
+  type: compute.v1.instance
+  properties:
+  #basic configuration comes here
+    zone: [zone where the instance resides]
+    machineType: [URL of the machine type resource to use for this instance]
+    disks:
+    - deviceName: [unique device name]
+      type: [type of the disk, SCRATCH or PERSISTENT]
+      boot: [indicate that it is boot disk or not]
+      autoDelete: [Specifies whether the disk will be auto-deleted when the instance is deleted]
+      initializeParams:
+        sourceImage: [The source image to create the disk]
+    networkInterfaces:
+    - network: [URL of the network resource for this instance]
+      accessConfigs:
+      - name: [Name for access configuration, currenly only accepted value is "External NAT"]
+        type: [type of configuration, currently only accepted value is "ONE_TO_ONE_NAT"]
+
+# Get URL self-link for machine time in a specific region for your project
+gcloud compute machine-types describe f1-micro --zone us-central1-a | grep selfLink
+
+# Get URL self-link for image
+gcloud compute images list | grep debian
+gcloud compute images describe debian-9-stretch-v20190326 --project debian-cloud | grep selfLink
+
+# Get URL self-link for your VPC network
+gcloud compute networks list
+gcloud compute networks describe default | grep selfLink
 
 # Creating template files
 https://cloud.google.com/deployment-manager/docs/step-by-step-guide/create-a-template
 
 # Sample Deployment manager templats from Google
 https://github.com/GoogleCloudPlatform/deploymentmanager-samples
+
+# Delete your deployment
+gcloud deployment-manager deployments delete  my-first-deployment
 
 #########################
 ####    Cloud KMS    ####
